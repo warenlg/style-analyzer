@@ -6,7 +6,8 @@ from typing import Any
 from lookout.core.cmdline import ArgumentDefaultsHelpFormatterNoNone
 from lookout.core.slogging import setup as setup_slogging
 from lookout.style.format.quality_report import quality_report
-from lookout.style.format.robustness import plot_pr_curve, style_robustness_report
+from lookout.style.format.robustness import get_rules_precision, plot_pr_curve, \
+    style_robustness_report
 from lookout.style.format.rule_stat import print_rules_report
 from lookout.style.format.visualization import visualize
 
@@ -107,6 +108,16 @@ def create_parser() -> ArgumentParser:
                                  help="Support threshold to filter relevant rules.")
     pr_curve_parser.add_argument("-o", "--output", required=True, type=str,
                                  help="Path to the output figure. Could be a png or svg file.")
+    
+    # Gather precision score for each rule
+    rules_precision_parser = add_parser("rules-precision", "Plot Precision/Recall curves with different rules "
+                                                           "selected based on their confidence.")
+    rules_precision_parser.set_defaults(handler=get_rules_precision)
+    add_true_noisy_repos_args(rules_precision_parser)
+    add_bblfsh_arg(rules_precision_parser)
+    add_model_args(rules_precision_parser)
+    rules_precision_parser.add_argument("--support-threshold", type=int, default=0,
+                                        help="Support threshold to filter relevant rules.")
     return parser
 
 

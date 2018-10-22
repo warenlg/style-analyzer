@@ -183,16 +183,18 @@ def compute_metrics(changes_count: int, predictions_count: int, true_positive: i
     :param true_positive: Number of positive cases predicted as positive.
     :return: Precision, recall and F1-score metrics.
     """
+    if predictions_count == 0:
+        raise ValueError
     false_positive = predictions_count - true_positive
     false_negative = changes_count - predictions_count
     try:
         precision = true_positive / (true_positive + false_positive)
         recall = true_positive / (true_positive + false_negative)
+        f1_score = 2 * precision * recall / (precision + recall)
     except ZeroDivisionError:
-        precision = 1.
+        precision = 0.
         recall = 0.
         f1_score = 0.
-    f1_score = 2 * precision * recall / (precision + recall)
     return precision, recall, f1_score
 
 
@@ -340,3 +342,76 @@ def plot_pr_curve(true_repo: str, noisy_repo: str, bblfsh: str, language: str,
     print("recall x:", recalls)
     print("precision y:", precisions)
     plot_curve(numpy.asarray(recalls), numpy.asarray(precisions), output)
+
+
+def get_rules_precision(true_repo: str, noisy_repo: str, bblfsh: str, language: str,
+                        model_path: str, support_threshold: int) -> None:
+    """
+    Plot a precision/recall curve with rules having higher support than `support_threshold`.
+
+    :param true_repo: Path to the original repository we want to test the model on.
+    :param noisy_repo: Path to the noisy version of the repository where 1 style mistake is \
+           randomly added in every file.
+    :param bblfsh: Babelfish client. Babelfish server should be started accordingly.
+    :param language: Language to consider, others will be discarded.
+    :param model_path: Path to the model to test. It should be previously trained on the original \
+           repository located in ':param true_repo:'.
+    :param support_threshold: Support threshold to filter relevant rules.
+    :param output: Path to the output figure. Could yield to a png or svg file.
+    """
+    log = logging.getLogger("plot_pr_curve")
+
+    true_content = get_content_from_repo(true_repo)
+    noisy_content = get_content_from_repo(noisy_repo)
+    true_files, noisy_files, lines_changed = get_difflib_changes(true_content, noisy_content)
+    log.info("Number of files modified by adding style noise: %d / %d", len(true_files),
+             len(true_content))
+    del true_content, noisy_content
+
+    client = BblfshClient(bblfsh)
+    analyzer = FormatModel().load(model_path)
+    rules = analyzer[language]
+    vnodes_y_true = files2vnodes(true_files, rules, client, language)
+    mispreds_noise = files2mispreds(noisy_files, rules, client, language)
+    diff_mispreds = get_diff_mispreds(mispreds_noise, lines_changed)
+    changes_count = len(lines_changed)
+
+    rules_selected, recalls, stats = [], [], []
+    rules_selection = filter_relevant_rules(rules.rules, support_threshold, log)
+    confs = []
+    for rule in rules_selection:
+        #confs.append(rule[1])
+        filtered_mispreds = {k: m for k, m in diff_mispreds.items() if rule[0] == m.rule}
+        style_fixes = get_style_fixes(filtered_mispreds, vnodes_y_true,
+                                      true_files, noisy_files)
+        try:
+            precision, recall, f1_score = compute_metrics(changes_count=changes_count,
+                                                      predictions_count=len(filtered_mispreds),
+                                                      true_positive=len(style_fixes))
+            rules_selected.append((rule[0], round(precision, 3), round(recall, 3)))
+            recalls.append(round(recall, 3))
+            stats.append((rule[1], rule[2]))
+            log.debug("precision: %.3f", precision)
+            log.debug("recall: %.3f", recall)
+        except ValueError:
+            continue
+
+    rules_selected = sorted(rules_selected, key=lambda k: (k[1], k[2]), reverse=True)
+    precisions, recalls = [], []
+    for i in range(len(rules_selected)):
+        filtered_mispreds = {k: m for k, m in diff_mispreds.items()
+                             if any(r[0] == m.rule for r in rules_selected[:i + 1])}
+        style_fixes = get_style_fixes(filtered_mispreds, vnodes_y_true,
+                                      true_files, noisy_files)
+        precision, recall, f1_score = compute_metrics(changes_count=changes_count,
+                                                      predictions_count=len(filtered_mispreds),
+                                                      true_positive=len(style_fixes))
+        precisions.append(round(precision, 3))
+        recalls.append(round(recall, 3))
+        log.debug("precision: %.3f", precision)
+        log.debug("recall: %.3f", recall)
+        log.debug("F1 score: %.3f", f1_score, 3)
+
+    print("recall x:", recalls)
+    print("precision y:", precisions)
+    #plot_curve(numpy.asarray(recalls), numpy.asarray(precisions), output)
