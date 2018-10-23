@@ -3,6 +3,7 @@ import sys
 import unittest
 
 import lookout.style.format.__main__ as main
+from lookout.style.format.tests.test_quality_report import Capturing
 
 
 class MainTests(unittest.TestCase):
@@ -50,6 +51,21 @@ class MainTests(unittest.TestCase):
         set_actions = set(action2handler)
         self.assertEqual(set_called_actions, set_actions)
         self.assertEqual(len(set_called_actions), len(called_actions))
+
+
+    def test_empty(self):
+        args = sys.argv
+        error = argparse.ArgumentParser.error
+        try:
+            argparse.ArgumentParser.error = lambda self, message: None
+
+            sys.argv = [main.__file__]
+            with Capturing() as  output:
+                main.main()
+        finally:
+            sys.argv = args
+            argparse.ArgumentParser.error = error
+        self.assertIn("usage:", output[0])
 
 
 if __name__ == "__main__":
