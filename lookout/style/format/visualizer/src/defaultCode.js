@@ -1,18 +1,28 @@
-const defaultCode = String.raw`"use strict";
+const defaultCode = String.raw`module.exports = function( grunt ) {
 
-// Run Node with provided parameters: the first one being the Grunt
-// done function and latter ones being files to be tested.
-// See the comment in ../node_smoke_tests.js for more information.
-module.exports = function spawnTest( done, command ) {
-    var spawn = require( "child_process" ).spawn;
+	"use strict";
 
-	spawn( command, {
-		stdio: "inherit",
-		shell: true
-	} )
-		.on( "close", function( code ) {
-			done( code === 0 );
-		} );
+	var timeout = 2000,
+		spawnTest = require( "./lib/spawn_test.js" );
+
+	grunt.registerTask( "promises_aplus_tests",
+		[ "promises_aplus_tests:deferred", "promises_aplus_tests:when" ] );
+
+	grunt.registerTask( 'promises_aplus_tests:deferred', function() {
+		spawnTest( this.async(),
+			"\"" + __dirname + "/../../node_modules/.bin/promises-aplus-tests\"" +
+				" test/promises_aplus_adapters/deferred.js" +
+				" --timeout " + timeout
+		);
+	} );
+
+	grunt.registerTask( "promises_aplus_tests:when", function() {
+		spawnTest( this.async(),
+			"\"" + __dirname + "/../../node_modules/.bin/promises-aplus-tests\"" +
+				" test/promises_aplus_adapters/when.js" +
+				" --timeout " + timeout
+		);
+	} );
 };
 `;
 
